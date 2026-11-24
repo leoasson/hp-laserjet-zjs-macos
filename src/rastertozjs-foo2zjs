@@ -1,0 +1,24 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-or-later
+# CUPS filter: application/vnd.cups-raster -> ZjStream for the HP LaserJet Pro
+# "-z2" family (M12a, M12w, P1102, P1102w, P1566, P1606dn) via foo2zjs.
+#
+# argv (CUPS filter convention): job user title copies options [file]
+DIR="$(cd "$(dirname "$0")" && pwd)"
+[ $# -ge 5 ] || { echo "ERROR: usage: $0 job user title copies options [file]" >&2; exit 1; }
+
+TMP="${TMPDIR:-/tmp}/rastertozjs.$$.pbm"
+trap 'rm -f "$TMP"' EXIT
+
+"$DIR/rastertopbm" ${6:+"$6"} > "$TMP" || { echo "ERROR: rastertopbm failed" >&2; exit 1; }
+
+# foo2zjs announces a paper code to the printer; infer it from the page height
+# in pixels at 600 dpi (Letter 6400-6600, A4 ~6800, Legal ~8200).
+H=$(head -c 64 "$TMP" | sed -n 2p | awk '{print $2}')
+if   [ "${H:-0}" -gt 7600 ]; then PAPER=5     # Legal
+elif [ "${H:-0}" -gt 6600 ]; then PAPER=9     # A4
+else                              PAPER=1     # Letter
+fi
+echo "DEBUG: page height=$H paper=$PAPER" >&2
+
+exec "$DIR/foo2zjs" -P -z2 -L0 -r600x600 -p"$PAPER" -J "$3" -U "$2" < "$TMP"
